@@ -2,6 +2,7 @@
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
+const fuzz = require('fuzzball');
 
 const app = express();
 const port = 3000;
@@ -27,22 +28,37 @@ connection.connect(error =>{
         
 })
 app.post('/search', (req, res) => {
- const {medications} = req.body
- const query = "SELECT * FROM diseases"
- connection.query(query, (error, results) => {
-  if(error){
-    console.log("Error")
-  }
+  const { medications } = req.body;
+  const query = "SELECT * FROM diseases";
 
-  const matchedDiseases = results.filter(disease => {
-        if (!disease.Medications) {
-          return false;
+  connection.query(query, (error, results) => {
+    if (error) {
+      console.error("Error:", error);
+      return res.status(500).json({ error: "Database query failed" });
+    }
+
+    const threshold = 80;
+    const matchedDiseases = [];
+
+    results.forEach(disease => {
+      if (!disease.Medications) return;
+
+      const dbMeds = disease.Medications.split(',').map(med => med.trim().toLowerCase());
+
+      // Check each user input medication against each medication in the database
+      for (const userMed of medications) {
+        for (const dbMed of dbMeds) {
+          const similarity = fuzz.ratio(userMed.toLowerCase(), dbMed);
+          if (similarity >= threshold) {
+            matchedDiseases.push(disease.Name);
+            break;
+          }
         }
+        if (matchedDiseases.includes(disease.Name)) break;
+      }
+    });
 
-        const meds = disease.Medications.split(',').map(m => m.trim().toLowerCase());
-        return meds.some(med => medications.map(m => m.toLowerCase()).includes(med));
-      }).map(disease => disease.Name);
-      res.json({ diseases: matchedDiseases });
+    res.json({ diseases: matchedDiseases });
   });
 });
 // Start server
